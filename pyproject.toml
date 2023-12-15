@@ -19,6 +19,7 @@ psycopg2 = "^2.9.7"
 lxml = "^4.9.3"
 langserve = {extras = ["server"], version = "^0.0.34"}
 voyageai = "^0.1.4"
+python-dotenv = "^1.0.0"
 
 
 [tool.poetry.group.dev.dependencies]

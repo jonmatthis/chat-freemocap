@@ -12,6 +12,9 @@ from pydantic import BaseModel
 
 from chain import ChatRequest, answer_chain
 
+from dotenv import load_dotenv
+load_dotenv()
+
 client = Client()
 
 app = FastAPI()

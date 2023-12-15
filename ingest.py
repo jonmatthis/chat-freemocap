@@ -19,10 +19,10 @@ from constants import WEAVIATE_DOCS_INDEX_NAME
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-WEAVIATE_URL = os.environ["WEAVIATE_URL"]
-WEAVIATE_API_KEY = os.environ["WEAVIATE_API_KEY"]
-RECORD_MANAGER_DB_URL = os.environ["RECORD_MANAGER_DB_URL"]
+#
+# WEAVIATE_URL = os.environ["WEAVIATE_URL"]
+# WEAVIATE_API_KEY = os.environ["WEAVIATE_API_KEY"]
+# RECORD_MANAGER_DB_URL = os.environ["RECORD_MANAGER_DB_URL"]
 
 
 def metadata_extractor(meta: dict, soup: BeautifulSoup) -> dict:
