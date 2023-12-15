@@ -2,7 +2,8 @@ import os
 from operator import itemgetter
 from typing import Dict, List, Optional, Sequence
 
-import weaviate
+import requests
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.chat_models import ChatOpenAI
@@ -12,49 +13,30 @@ from langchain.prompts import (ChatPromptTemplate, MessagesPlaceholder,
                                PromptTemplate)
 from langchain.schema import Document
 from langchain.schema.embeddings import Embeddings
-from langchain.schema.language_model import BaseLanguageModel
 from langchain.schema.messages import AIMessage, HumanMessage
 from langchain.schema.output_parser import StrOutputParser
 from langchain.schema.retriever import BaseRetriever
-from langchain.schema.runnable import (Runnable, RunnableBranch,
+from langchain.schema.runnable import (RunnableBranch,
                                        RunnableLambda, RunnableMap)
-from langchain.vectorstores.weaviate import Weaviate
+from langchain.vectorstores.docarray import DocArrayInMemorySearch
+from langchain_core.language_models import BaseLanguageModel
+from langchain_core.runnables import Runnable
 from langsmith import Client
 from pydantic import BaseModel
+from tqdm import tqdm
 
-from constants import WEAVIATE_DOCS_INDEX_NAME
+load_dotenv()
 
 RESPONSE_TEMPLATE = """\
-You are an expert programmer and problem-solver, tasked with answering any question \
-about Langchain.
+You are (gay) JRR Tolkein here to provide a bunch of homoerotic subtext to your GReat WOrks. 
 
-Generate a comprehensive and informative answer of 80 words or less for the \
-given question based solely on the provided search results (URL and content). You must \
-only use information from the provided search results. Use an unbiased and \
-journalistic tone. Combine search results together into a coherent answer. Do not \
-repeat text. Cite search results using [${{number}}] notation. Only cite the most \
-relevant results that answer the question accurately. Place these citations at the end \
-of the sentence or paragraph that reference them - do not put them all at the end. If \
-different results refer to different entities within the same name, write separate \
-answers for each entity.
-
-You should use bullet points in your answer for readability. Put citations where they apply
-rather than putting them all at the end.
-
-If there is nothing in the context relevant to the question at hand, just say "Hmm, \
-I'm not sure." Don't try to make up an answer.
-
-Anything between the following `context`  html blocks is retrieved from a knowledge \
-bank, not part of the conversation with the user. 
+BOY YOU CAN"T WAIT TO TALK BOUT GAY FRODO
 
 <context>
     {context} 
 <context/>
 
-REMEMBER: If there is no relevant information within the context, just say "Hmm, I'm \
-not sure." Don't try to make up an answer. Anything between the preceding 'context' \
-html blocks is retrieved from a knowledge bank, not part of the conversation with the \
-user.\
+
 """
 
 REPHRASE_TEMPLATE = """\
@@ -65,7 +47,6 @@ Chat History:
 {chat_history}
 Follow Up Input: {question}
 Standalone Question:"""
-
 
 client = Client()
 
@@ -80,10 +61,6 @@ app.add_middleware(
 )
 
 
-WEAVIATE_URL = os.environ["WEAVIATE_URL"]
-WEAVIATE_API_KEY = os.environ["WEAVIATE_API_KEY"]
-
-
 class ChatRequest(BaseModel):
     question: str
     chat_history: Optional[List[Dict[str, str]]]
@@ -95,32 +72,56 @@ def get_embeddings_model() -> Embeddings:
     return OpenAIEmbeddings(chunk_size=200)
 
 
+def get_text_from_url(
+        url="https://raw.githubusercontent.com/ganesh-k13/shell/master/test_search/www.glozman.com/TextPages/01%20-%20The%20Fellowship%20Of%20The%20Ring.txt"):
+    response = requests.get(url)
+    response.raise_for_status()  # This will raise an exception if there's an error.
+    return response.text
+
+
+def split_text_into_chunks(text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
+    chunks = []
+    start_index = 0
+    text_as_words = text.split(" ")
+    total_chunks = (len(text_as_words) - chunk_overlap) // (chunk_size - chunk_overlap)
+
+    for _ in tqdm(range(total_chunks), desc="Splitting text into chunks"):
+        end_index = min(start_index + chunk_size, len(text_as_words))
+        chunks.append(" ".join(text_as_words[start_index:end_index]))
+        start_index = end_index - chunk_overlap
+        if end_index >= len(text_as_words):
+            break
+
+    return chunks
+
+
 def get_retriever() -> BaseRetriever:
-    weaviate_client = weaviate.Client(
-        url=WEAVIATE_URL,
-        auth_client_secret=weaviate.AuthApiKey(api_key=WEAVIATE_API_KEY),
-    )
-    weaviate_client = Weaviate(
-        client=weaviate_client,
-        index_name=WEAVIATE_DOCS_INDEX_NAME,
-        text_key="text",
-        embedding=get_embeddings_model(),
-        by_text=False,
-        attributes=["source", "title"],
-    )
-    return weaviate_client.as_retriever(search_kwargs=dict(k=6))
+    big_text = get_text_from_url()
+
+    chunks = split_text_into_chunks(big_text)
+
+    # db = Chroma.from_texts(
+    #     texts=chunks,
+    #     embedding=get_embeddings_model(),
+    # )
+    # db_retriever = db.as_retriever()
+    vectorstore = DocArrayInMemorySearch.from_texts(chunks, embedding=get_embeddings_model())
+    retriever = vectorstore.as_retriever()
+
+    return retriever
 
 
-def create_retriever_chain(
-    llm: BaseLanguageModel, retriever: BaseRetriever
-) -> Runnable:
+def create_retriever_chain(llm: BaseLanguageModel, retriever: BaseRetriever) -> Runnable:
     CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template(REPHRASE_TEMPLATE)
+
     condense_question_chain = (
-        CONDENSE_QUESTION_PROMPT | llm | StrOutputParser()
+            CONDENSE_QUESTION_PROMPT | llm | StrOutputParser()
     ).with_config(
         run_name="CondenseQuestion",
     )
+
     conversation_chain = condense_question_chain | retriever
+
     return RunnableBranch(
         (
             RunnableLambda(lambda x: bool(x.get("chat_history"))).with_config(
@@ -129,10 +130,10 @@ def create_retriever_chain(
             conversation_chain.with_config(run_name="RetrievalChainWithHistory"),
         ),
         (
-            RunnableLambda(itemgetter("question")).with_config(
-                run_name="Itemgetter:question"
-            )
-            | retriever
+                RunnableLambda(itemgetter("question")).with_config(
+                    run_name="Itemgetter:question"
+                )
+                | retriever
         ).with_config(run_name="RetrievalChainWithNoHistory"),
     ).with_config(run_name="RouteDependingOnChatHistory")
 
@@ -157,8 +158,8 @@ def serialize_history(request: ChatRequest):
 
 
 def create_chain(
-    llm: BaseLanguageModel,
-    retriever: BaseRetriever,
+        llm: BaseLanguageModel,
+        retriever: BaseRetriever,
 ) -> Runnable:
     retriever_chain = create_retriever_chain(
         llm,
@@ -183,16 +184,16 @@ def create_chain(
         run_name="GenerateResponse",
     )
     return (
-        {
-            "question": RunnableLambda(itemgetter("question")).with_config(
-                run_name="Itemgetter:question"
-            ),
-            "chat_history": RunnableLambda(serialize_history).with_config(
-                run_name="SerializeHistory"
-            ),
-        }
-        | _context
-        | response_synthesizer
+            {
+                "question": RunnableLambda(itemgetter("question")).with_config(
+                    run_name="Itemgetter:question"
+                ),
+                "chat_history": RunnableLambda(serialize_history).with_config(
+                    run_name="SerializeHistory"
+                ),
+            }
+            | _context
+            | response_synthesizer
     )
 
 
@@ -202,7 +203,4 @@ llm = ChatOpenAI(
     temperature=0,
 )
 retriever = get_retriever()
-answer_chain = create_chain(
-    llm,
-    retriever,
-)
+answer_chain = create_chain(llm, retriever, )
