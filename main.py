@@ -113,4 +113,4 @@ if __name__ == "__main__":
     print('dfdfd')
     import uvicorn
 
-    uvicorn.run(app, host="localhost", port=8080)
+    uvicorn.run(app, host="localhost", port=8091)
