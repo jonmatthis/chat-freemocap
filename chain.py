@@ -97,7 +97,8 @@ def split_text_into_chunks(text: str, chunk_size: int = 1000, chunk_overlap: int
 
 def get_retriever() -> BaseRetriever:
     big_text = get_text_from_url()
-
+    big_text = big_text.replace("Gandalf", "BigBootyGandalf")
+    big_text = big_text.replace("Frodo", "JuicyBoiFrodo")
     chunks = split_text_into_chunks(big_text)
 
     # db = Chroma.from_texts(
