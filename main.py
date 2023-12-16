@@ -1,5 +1,6 @@
 """Main entrypoint for the app."""
 import asyncio
+import os
 from typing import Optional, Union
 from uuid import UUID
 
@@ -110,7 +111,11 @@ async def get_trace(body: GetTraceBody):
 
 
 if __name__ == "__main__":
-    print('dfdfd')
     import uvicorn
-
-    uvicorn.run(app, host="localhost", port=8091)
+    import dotenv
+    load_dotenv()
+    host_name = os.getenv("HOST_NAME")
+    if host_name is None:
+        host_name = "localhost"
+    port_number = 8091
+    uvicorn.run(app, host=host_name, port=port_number)
